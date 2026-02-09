@@ -55,68 +55,81 @@ The system uses a serverless architecture on AWS, ensuring scalability, reliabil
 
 ## 🏗️ Architecture
 
-### System Flow
+### System Diagram
 
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│                          USER INTERFACE                               │
-│  S3 Static Website (Dashboard) - Real-time Visualization             │
-└───────────────────────────┬──────────────────────────────────────────┘
-                            │ HTTPS
-                            ▼
-┌──────────────────────────────────────────────────────────────────────┐
-│                      API GATEWAY (REST API)                           │
-│  https://m0tdyp9dia.execute-api.us-east-1.amazonaws.com/prod        │
-└───────────────────────────┬──────────────────────────────────────────┘
-                            │
-                            ▼
-         ┌──────────────────────────────────────────┐
-         │   Lambda #2: API & Actuator Control      │
-         │   • Serves all dashboard API endpoints   │
-         │   • Reads sensor data from DynamoDB      │
-         │   • Makes actuator decisions             │
-         │   • Writes actuator commands to DB       │
-         │   • Manages threshold configuration      │
-         └──────┬───────────────────────────────────┘
-                │                    ▲
-                │ Read/Write         │ Trigger (every 5 min)
-                ▼                    │
-         ┌─────────────────┐   ┌────┴──────────────────┐
-         │   DynamoDB      │   │  EventBridge Schedule │
-         │   • sensor-data │   │  Automatic Control    │
-         │   • actuator-   │   └───────────────────────┘
-         │     commands    │
-         └────▲────────────┘
-              │ Write
-              │
-         ┌────┴────────────────────────┐
-         │  Lambda #1: Data Processing │
-         │  • Validates sensor data    │
-         │  • Stores readings in DB    │
-         │  • Generates alerts         │
-         └────▲─────────┬──────────────┘
-              │         │ Publish alerts
-              │         ▼
-         ┌────┴──────┐  ┌────────────┐
-         │ SQS Queue │  │ SNS Topic  │
-         │ Messages  │  │  Alerts    │
-         └────▲──────┘  └─────┬──────┘
-              │               │ Email
-              │ Subscribe     ▼
-         ┌────┴──────────┐  👤 User
-         │   SNS Topic   │
-         │ Sensor Data   │
-         └────▲──────────┘
-              │ Publish
-         ┌────┴──────────────────────────┐
-         │  EC2 Instance (IoT Simulator) │
-         │  • Simulates 2 greenhouses    │
-         │  • Generates sensor readings  │
-         │  • Publishes to SNS           │
-         └───────────────────────────────┘
+```mermaid
+graph TB
+    subgraph "User Interface"
+        A[S3 Static Website<br/>greenhouse-dashboard-sakibshanto]
+        style A fill:#FF9900,stroke:#232F3E,stroke-width:2px,color:#000
+    end
+
+    subgraph "API Layer"
+        B[API Gateway<br/>m0tdyp9dia.execute-api.us-east-1.amazonaws.com/prod]
+        style B fill:#FF4F8B,stroke:#232F3E,stroke-width:2px,color:#fff
+    end
+
+    subgraph "Compute Services"
+        C[Lambda #2<br/>API & Actuator Control<br/>- Serves dashboard APIs<br/>- Makes actuator decisions<br/>- Manages thresholds]
+        D[Lambda #1<br/>Data Processing<br/>- Validates sensor data<br/>- Stores in DynamoDB<br/>- Generates alerts]
+        style C fill:#FF9900,stroke:#232F3E,stroke-width:2px,color:#000
+        style D fill:#FF9900,stroke:#232F3E,stroke-width:2px,color:#000
+    end
+
+    subgraph "Database"
+        E[(DynamoDB<br/>greenhouse-sensor-data<br/>PK: greenhouse_id, SK: timestamp)]
+        F[(DynamoDB<br/>greenhouse-actuator-commands<br/>PK: greenhouse_id, SK: timestamp)]
+        style E fill:#4053D6,stroke:#232F3E,stroke-width:2px,color:#fff
+        style F fill:#4053D6,stroke:#232F3E,stroke-width:2px,color:#fff
+    end
+
+    subgraph "Messaging Services"
+        G[SNS Topic<br/>greenhouse-sensor-data]
+        H[SQS Queue<br/>sensor-data-queue]
+        I[SNS Topic<br/>greenhouse-alerts]
+        style G fill:#FF4F8B,stroke:#232F3E,stroke-width:2px,color:#fff
+        style H fill:#FF4F8B,stroke:#232F3E,stroke-width:2px,color:#fff
+        style I fill:#FF4F8B,stroke:#232F3E,stroke-width:2px,color:#fff
+    end
+
+    subgraph "Automation"
+        J[EventBridge<br/>Schedule: rate 5 minutes<br/>greenhouse-actuator-schedule]
+        style J fill:#FF9900,stroke:#232F3E,stroke-width:2px,color:#000
+    end
+
+    subgraph "IoT Simulation"
+        K[EC2 Instance<br/>IoT Sensor Simulator<br/>greenhouse-01<br/>greenhouse-02]
+        style K fill:#FF9900,stroke:#232F3E,stroke-width:2px,color:#000
+    end
+
+    subgraph "End Users"
+        L[👤 User Email<br/>Alert Notifications]
+        M[👤 Dashboard User<br/>Web Browser]
+        style L fill:#3F8624,stroke:#232F3E,stroke-width:2px,color:#fff
+        style M fill:#3F8624,stroke:#232F3E,stroke-width:2px,color:#fff
+    end
+
+    K -->|"1. Publish sensor readings<br/>(every 5 sec)"| G
+    G -->|"2. Fan-out messages"| H
+    H -->|"3. Poll messages"| D
+    D -->|"4. Write sensor data"| E
+    D -->|"5. Publish alerts"| I
+    I -->|"6. Email notifications"| L
+
+    J -->|"7. Trigger (every 5 min)"| C
+    C -->|"8. Read sensor data"| E
+    C -->|"9. Write commands"| F
+
+    M -->|"10. HTTPS requests"| A
+    A -->|"11. API calls"| B
+    B -->|"12. Invoke Lambda"| C
+
+    C -.->|"Response"| B
+    B -.->|"JSON data"| A
+    A -.->|"Render UI"| M
 ```
 
-### Data Flow
+### Data Flow Description
 
 1. **EC2 Simulator** → Generates sensor data for 2 greenhouses every 5 seconds
 2. **SNS Topic** → Receives and broadcasts sensor readings from EC2
@@ -128,7 +141,22 @@ The system uses a serverless architecture on AWS, ensuring scalability, reliabil
 8. **API Gateway** → Routes all dashboard HTTP requests to Lambda #2
 9. **S3 Dashboard** → Static website fetches data via API Gateway → Displays to users
 
-```
+### Component Details
+
+**Lambda Functions:**
+- **Lambda #1 (Data Processing)**: `greenhouse-data-processor` - Processes sensor data from SQS queue
+- **Lambda #2 (API Handler)**: `greenhouse-api-handler` - REST API backend + actuator automation
+
+**Data Storage:**
+- **DynamoDB Tables**: `greenhouse-sensor-data`, `greenhouse-actuator-commands`
+- **S3 Bucket**: `greenhouse-dashboard-sakibshanto`
+
+**Messaging:**
+- **SNS Topics**: `greenhouse-sensor-data-topic`, `greenhouse-alerts-topic`
+- **SQS Queue**: `greenhouse-sensor-data-queue`
+
+**Automation:**
+- **EventBridge Rule**: `greenhouse-actuator-schedule` (triggers every 5 minutes)
 
 ---
 
