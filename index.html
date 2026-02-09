@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>🌱 Smart GreenHouse Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="container">
+      <!-- Header -->
+      <header class="header">
+        <h1>🌱 Smart GreenHouse</h1>
+        <div class="header-controls">
+          <select id="greenhouse-select">
+            <option value="greenhouse-01">Greenhouse 01</option>
+          </select>
+          <span id="last-updated">Last updated: --</span>
+          <button id="refresh-btn" onclick="refreshData()">🔄 Refresh</button>
+        </div>
+      </header>
+
+      <!-- Current Readings Cards -->
+      <section class="current-readings">
+        <div class="card temperature">
+          <div class="card-icon">🌡️</div>
+          <div class="card-content">
+            <h3>Temperature</h3>
+            <div class="card-value" id="current-temp">--</div>
+            <div class="card-unit">°C</div>
+            <div class="card-range" id="temp-range">Min: -- | Max: --</div>
+          </div>
+          <div class="card-status" id="temp-status"></div>
+        </div>
+
+        <div class="card humidity">
+          <div class="card-icon">💧</div>
+          <div class="card-content">
+            <h3>Humidity</h3>
+            <div class="card-value" id="current-humidity">--</div>
+            <div class="card-unit">%</div>
+            <div class="card-range" id="humidity-range">Min: -- | Max: --</div>
+          </div>
+          <div class="card-status" id="humidity-status"></div>
+        </div>
+
+        <div class="card soil">
+          <div class="card-icon">🌍</div>
+          <div class="card-content">
+            <h3>Soil Moisture</h3>
+            <div class="card-value" id="current-soil">--</div>
+            <div class="card-unit">%</div>
+            <div class="card-range" id="soil-range">Min: -- | Max: --</div>
+          </div>
+          <div class="card-status" id="soil-status"></div>
+        </div>
+
+        <div class="card light">
+          <div class="card-icon">☀️</div>
+          <div class="card-content">
+            <h3>Light Intensity</h3>
+            <div class="card-value" id="current-light">--</div>
+            <div class="card-unit">lux</div>
+            <div class="card-range" id="light-range">Min: -- | Max: --</div>
+          </div>
+          <div class="card-status" id="light-status"></div>
+        </div>
+      </section>
+
+      <!-- Charts Section -->
+      <section class="charts-section">
+        <div class="chart-container">
+          <div class="chart-header">
+            <h2>📈 Sensor History</h2>
+            <select id="chart-hours" onchange="updateCharts()">
+              <option value="1">Last 1 Hour</option>
+              <option value="6" selected>Last 6 Hours</option>
+              <option value="12">Last 12 Hours</option>
+              <option value="24">Last 24 Hours</option>
+            </select>
+          </div>
+          <canvas id="sensor-chart"></canvas>
+        </div>
+      </section>
+
+      <!-- Actuator Control Section -->
+      <section class="actuator-section">
+        <h2 style="margin-bottom: 16px; color: var(--text-dark);">
+          🤖 Actuator Control (Automatic + Manual)
+        </h2>
+        <div class="actuators-grid">
+          <!-- Water Pump Card -->
+          <div class="actuator-card">
+            <div class="actuator-header">
+              <div class="actuator-title">
+                <span class="actuator-icon">💧</span>
+                <h3>Water Pump</h3>
+              </div>
+              <div id="water-pump-state" class="actuator-state off">
+                <span class="state-indicator off"></span>
+                OFF
+              </div>
+            </div>
+            <div class="actuator-details">
+              <p><strong>Reason:</strong> <span id="water-pump-reason">--</span></p>
+              <p><strong id="water-pump-updated">Last updated: --</strong></p>
+            </div>
+            <div class="actuator-controls">
+              <button
+                id="water-pump-on"
+                class="btn-on"
+                onclick="controlActuator('water_pump', 'ON', 'water-pump-on')"
+              >
+                💧 Turn ON
+              </button>
+              <button
+                id="water-pump-off"
+                class="btn-off"
+                onclick="controlActuator('water_pump', 'OFF', 'water-pump-off')"
+              >
+                ⛔ Turn OFF
+              </button>
+            </div>
+          </div>
+
+          <!-- Cooling Fan Card -->
+          <div class="actuator-card">
+            <div class="actuator-header">
+              <div class="actuator-title">
+                <span class="actuator-icon">🌬️</span>
+                <h3>Cooling Fan</h3>
+              </div>
+              <div id="cooling-fan-state" class="actuator-state off">
+                <span class="state-indicator off"></span>
+                OFF
+              </div>
+            </div>
+            <div class="actuator-details">
+              <p><strong>Reason:</strong> <span id="cooling-fan-reason">--</span></p>
+              <p><strong id="cooling-fan-updated">Last updated: --</strong></p>
+            </div>
+            <div class="actuator-controls">
+              <button
+                id="cooling-fan-on"
+                class="btn-on"
+                onclick="controlActuator('cooling_fan', 'ON', 'cooling-fan-on')"
+              >
+                🌬️ Turn ON
+              </button>
+              <button
+                id="cooling-fan-off"
+                class="btn-off"
+                onclick="controlActuator('cooling_fan', 'OFF', 'cooling-fan-off')"
+              >
+                ⛔ Turn OFF
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Threshold Settings Display -->
+      <section class="threshold-panel">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+          <h2>⚙️ Automation Thresholds</h2>
+          <button id="edit-thresholds-btn" onclick="toggleThresholdEdit()" class="btn-on" style="padding: 8px 16px;">
+            ✏️ Edit Thresholds
+          </button>
+        </div>
+        <div class="threshold-grid">
+          <div class="threshold-item">
+            <h4>💧 Soil Moisture</h4>
+            <div class="threshold-value">
+              <label>Turn ON:</label>
+              <span id="soil-on-threshold">30%</span>
+              <input type="number" id="soil-on-input" style="display:none; width: 60px;" min="0" max="100" />
+            </div>
+            <div class="threshold-value">
+              <label>Turn OFF:</label>
+              <span id="soil-off-threshold">65%</span>
+              <input type="number" id="soil-off-input" style="display:none; width: 60px;" min="0" max="100" />
+            </div>
+          </div>
+
+          <div class="threshold-item">
+            <h4>🌡️ Temperature</h4>
+            <div class="threshold-value">
+              <label>Fan LOW:</label>
+              <span id="temp-low-threshold">30°C</span>
+              <input type="number" id="temp-low-input" style="display:none; width: 60px;" min="0" max="50" />
+            </div>
+            <div class="threshold-value">
+              <label>Fan HIGH:</label>
+              <span id="temp-high-threshold">35°C</span>
+              <input type="number" id="temp-high-input" style="display:none; width: 60px;" min="0" max="50" />
+            </div>
+            <div class="threshold-value">
+              <label>Turn OFF:</label>
+              <span id="temp-off-threshold">25°C</span>
+              <input type="number" id="temp-off-input" style="display:none; width: 60px;" min="0" max="50" />
+            </div>
+          </div>
+        </div>
+        <div id="threshold-edit-actions" style="display: none; margin-top: 16px; text-align: right;">
+          <button onclick="saveThresholds()" class="btn-on" style="margin-right: 8px;">
+            ✅ Save Changes
+          </button>
+          <button onclick="cancelThresholdEdit()" class="btn-off">
+            ❌ Cancel
+          </button>
+        </div>
+      </section>
+
+      <!-- Actuator History -->
+      <section class="history-panel">
+        <h2>📜 Actuator Command History (Last 24h)</h2>
+        <div class="history-list" id="history-list">
+          <p class="no-alerts">No actuator commands yet</p>
+        </div>
+      </section>
+
+      <!-- Statistics & Alerts -->
+      <section class="stats-alerts">
+        <div class="stats-panel">
+          <h2>📊 24-Hour Statistics</h2>
+          <div class="stats-grid" id="stats-grid">
+            <div class="stat-item">
+              <span class="stat-label">Total Readings</span>
+              <span class="stat-value" id="stat-readings">--</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">Alerts Triggered</span>
+              <span class="stat-value" id="stat-alerts">--</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">Avg Temperature</span>
+              <span class="stat-value" id="stat-avg-temp">--°C</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">Avg Humidity</span>
+              <span class="stat-value" id="stat-avg-humidity">--%</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="alerts-panel">
+          <h2>🚨 Recent Alerts</h2>
+          <div class="alerts-list" id="alerts-list">
+            <p class="no-alerts">No recent alerts</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Footer -->
+      <footer class="footer">
+        <p>Smart GreenHouse IoT Dashboard | AWS Cloud Lab Project</p>
+        <p id="connection-status">🟢 Connected</p>
+        <p style="font-size: 0.8rem; margin-top: 8px;">
+          🤖 Automatic actuator control runs every 5 minutes via EventBridge
+        </p>
+      </footer>
+    </div>
+
+    <script src="dashboard.js"></script>
+  </body>
+</html>
