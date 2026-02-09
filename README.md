@@ -55,50 +55,79 @@ The system uses a serverless architecture on AWS, ensuring scalability, reliabil
 
 ## 🏗️ Architecture
 
+### System Flow
+
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                          USER INTERFACE                              │
-│  S3 Static Website (Dashboard) - Real-time Visualization            │
-└──────────────────────────────┬──────────────────────────────────────┘
-                               │ HTTPS
-                               ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                      API GATEWAY (REST API)                          │
-│  https://m0tdyp9dia.execute-api.us-east-1.amazonaws.com/prod       │
-└───────────────┬─────────────────────────────────┬───────────────────┘
-                │                                 │
-                ▼                                 ▼
-    ┌───────────────────────┐       ┌───────────────────────────┐
-    │  Lambda Function #1   │       │   Lambda Function #2      │
-    │  Data Processing      │       │   API & Actuator Control  │
-    │  • Validate sensors   │       │   • Serve dashboard data  │
-    │  • Check thresholds   │       │   • Control actuators     │
-    │  • Generate alerts    │       │   • Process thresholds    │
-    └─────┬─────────────────┘       └──────┬────────────────────┘
-          │                                │         ▲
-          │                                │         │
-          ▼                                ▼         │
-    ┌─────────────────┐           ┌──────────────┐  │
-    │   Amazon SNS    │           │  DynamoDB    │  │
-    │  Email Alerts   │           │  • Sensor    │  │
-    │                 │           │    Data      │  │
-    └─────────────────┘           │  • Actuator  │  │
-                                  │    Commands  │  │
-          ▲                       └──────────────┘  │
-          │                                         │
-          │                       ┌─────────────────┴────────┐
-    ┌─────┴──────────┐           │   EventBridge Schedule   │
-    │  Amazon SQS    │           │   (Every 5 minutes)      │
-    │  Alert Queue   │           │   Auto-control trigger   │
-    └────────────────┘           └──────────────────────────┘
-          ▲
-          │
-    ┌─────┴──────────────────┐
-    │    EC2 Instance        │
-    │  IoT Sensor Simulator  │
-    │  • Generates data      │
-    │  • Publishes to API    │
-    └────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                          USER INTERFACE                               │
+│  S3 Static Website (Dashboard) - Real-time Visualization             │
+└───────────────────────────┬──────────────────────────────────────────┘
+                            │ HTTPS
+                            ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│                      API GATEWAY (REST API)                           │
+│  https://m0tdyp9dia.execute-api.us-east-1.amazonaws.com/prod        │
+└───────────────────────────┬──────────────────────────────────────────┘
+                            │
+                            ▼
+         ┌──────────────────────────────────────────┐
+         │   Lambda #2: API & Actuator Control      │
+         │   • Serves all dashboard API endpoints   │
+         │   • Reads sensor data from DynamoDB      │
+         │   • Makes actuator decisions             │
+         │   • Writes actuator commands to DB       │
+         │   • Manages threshold configuration      │
+         └──────┬───────────────────────────────────┘
+                │                    ▲
+                │ Read/Write         │ Trigger (every 5 min)
+                ▼                    │
+         ┌─────────────────┐   ┌────┴──────────────────┐
+         │   DynamoDB      │   │  EventBridge Schedule │
+         │   • sensor-data │   │  Automatic Control    │
+         │   • actuator-   │   └───────────────────────┘
+         │     commands    │
+         └────▲────────────┘
+              │ Write
+              │
+         ┌────┴────────────────────────┐
+         │  Lambda #1: Data Processing │
+         │  • Validates sensor data    │
+         │  • Stores readings in DB    │
+         │  • Generates alerts         │
+         └────▲─────────┬──────────────┘
+              │         │ Publish alerts
+              │         ▼
+         ┌────┴──────┐  ┌────────────┐
+         │ SQS Queue │  │ SNS Topic  │
+         │ Messages  │  │  Alerts    │
+         └────▲──────┘  └─────┬──────┘
+              │               │ Email
+              │ Subscribe     ▼
+         ┌────┴──────────┐  👤 User
+         │   SNS Topic   │
+         │ Sensor Data   │
+         └────▲──────────┘
+              │ Publish
+         ┌────┴──────────────────────────┐
+         │  EC2 Instance (IoT Simulator) │
+         │  • Simulates 2 greenhouses    │
+         │  • Generates sensor readings  │
+         │  • Publishes to SNS           │
+         └───────────────────────────────┘
+```
+
+### Data Flow
+
+1. **EC2 Simulator** → Generates sensor data for 2 greenhouses every 5 seconds
+2. **SNS Topic** → Receives and broadcasts sensor readings from EC2
+3. **SQS Queue** → Buffers messages from SNS for reliable processing
+4. **Lambda #1 (Data Processing)** → Consumes SQS messages → Validates → Writes to DynamoDB
+5. **DynamoDB** → Central data store (sensor-data, actuator-commands tables)
+6. **EventBridge** → Triggers Lambda #2 automatically every 5 minutes
+7. **Lambda #2 (API Handler)** → Reads sensor data → Makes actuator decisions → Writes commands
+8. **API Gateway** → Routes all dashboard HTTP requests to Lambda #2
+9. **S3 Dashboard** → Static website fetches data via API Gateway → Displays to users
+
 ```
 
 ---
@@ -106,28 +135,29 @@ The system uses a serverless architecture on AWS, ensuring scalability, reliabil
 ## ☁️ AWS Services Used
 
 ### **Compute & Processing**
-- **EC2** - IoT sensor data simulator (2 greenhouses)
-- **Lambda** - Serverless functions for data processing and API handling
-- **EventBridge** - Scheduled automation (every 5 minutes)
+- **EC2** - Runs IoT sensor simulator for 2 greenhouses (greenhouse-01, greenhouse-02)
+- **Lambda #1 (Data Processing)** - Consumes SQS messages, validates and stores sensor data
+- **Lambda #2 (API Handler)** - Serves dashboard API, controls actuators based on thresholds
+- **EventBridge** - Scheduled automation trigger (every 5 minutes for automatic actuator control)
 
 ### **Storage & Database**
-- **DynamoDB** - NoSQL database for sensor readings and actuator commands
-  - Table: `greenhouse-sensor-data` (Partition key: greenhouse_id, Sort key: timestamp)
-  - Table: `greenhouse-actuator-commands` (Partition key: greenhouse_id, Sort key: timestamp)
-- **S3** - Static website hosting for dashboard
+- **DynamoDB** - NoSQL database with two tables:
+  - `greenhouse-sensor-data` (PK: greenhouse_id, SK: timestamp) - Sensor readings
+  - `greenhouse-actuator-commands` (PK: greenhouse_id, SK: timestamp) - Actuator commands & config
+- **S3** - Static website hosting for React dashboard
 
 ### **Networking & API**
-- **API Gateway** - RESTful API endpoints for dashboard and IoT devices
+- **API Gateway** - RESTful API exposing Lambda #2 endpoints to dashboard
 
 ### **Messaging & Notifications**
-- **SNS** - Email notifications for critical alerts
-- **SQS** - Message queue for alert processing
+- **SNS** - Pub/Sub for sensor data distribution and alert notifications
+- **SQS** - Message queue buffer between SNS and Lambda #1 for reliable processing
 
 ### **Security & Access Management**
-- **IAM** - Role-based access control with least privilege principle
-  - Lambda execution roles
-  - EC2 instance profile
-  - API Gateway permissions
+- **IAM** - Role-based access control:
+  - Lambda execution roles (DynamoDB, CloudWatch Logs access)
+  - EC2 instance profile (SNS publish permissions)
+  - API Gateway invoke permissions
 
 ---
 
